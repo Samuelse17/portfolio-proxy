@@ -8,7 +8,8 @@ export default async function handler(req, res) {
   if (!ticker) { res.status(400).json({ error: 'ticker required' }); return; }
 
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d&includePrePost=false`;
+    // Use v7 quote API which gives regularMarketChangePercent directly
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketPreviousClose`;
     const r = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -18,15 +19,16 @@ export default async function handler(req, res) {
     });
     if (!r.ok) throw new Error('YF HTTP ' + r.status);
     const data = await r.json();
-    const meta = data?.chart?.result?.[0]?.meta;
-    if (!meta?.regularMarketPrice) throw new Error('no price');
+    const q = data?.quoteResponse?.result?.[0];
+    if (!q || !q.regularMarketPrice) throw new Error('no data for ' + ticker);
 
-    const price     = meta.regularMarketPrice;
-    const prevClose = meta.chartPreviousClose || meta.regularMarketPreviousClose || price;
-    const change    = price - prevClose;
-    const changePct = prevClose ? (change / prevClose) * 100 : 0;
-
-    res.status(200).json({ price, change, changePct, prevClose, ticker });
+    res.status(200).json({
+      price:      q.regularMarketPrice,
+      change:     q.regularMarketChange,
+      changePct:  q.regularMarketChangePercent,   // official exchange value
+      prevClose:  q.regularMarketPreviousClose,
+      ticker
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
